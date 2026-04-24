@@ -2,7 +2,7 @@
 
 Experimental implementation of **SQ-VAE** (Sony's VQ-VAE derivative) combined with a **Discrete Diffusion Probabilistic Model (D3PM)** to generate face images from highly compressed discrete latent representations on FFHQ.
 
-本プロジェクトは、**論文からの自力実装による技術力の証明および研究実装の再現性確認**を目的として作成しました。
+A from-scratch paper re-implementation, built as a portfolio of independent research and engineering capability.
 
 ---
 
@@ -16,7 +16,7 @@ Experimental implementation of **SQ-VAE** (Sony's VQ-VAE derivative) combined wi
 
 ## SQ-VAE Reconstruction Quality
 
-8 pairs of **original (top row) vs reconstructed (bottom row)** after decoding from 64×64 discrete latents (codebook size 1024):
+8 pairs of **original (top row) vs. reconstructed (bottom row)** after decoding from 64×64 discrete latents with a codebook of 1024:
 
 ![SQ-VAE reconstruction](sqvae_results_ffhq_1024/images/epoch_0100.jpg)
 
@@ -30,80 +30,72 @@ The reconstruction remains visually faithful even though each image is encoded i
 | SSIM | ![SSIM histogram](sqvae_eval_results/hist_ssim.png) |
 | L2 Loss | ![L2 histogram](sqvae_eval_results/hist_l2.png) |
 
-See [`sqvae_eval_results/reconstruction_stats.txt`](sqvae_eval_results/reconstruction_stats.txt) for the full statistics summary.
+Full statistics summary: [`sqvae_eval_results/reconstruction_stats.txt`](sqvae_eval_results/reconstruction_stats.txt).
 
 ---
 
 ## Overview
 
-本実装では以下の構成を採用しています。
+The implementation combines:
 
-- **Encoder / Decoder**: SQ-VAE (Sony の VQ-VAE 派生論文)
-- **Latent Space**: 離散潜在表現（1024 codebook、64×64 grid）
-- **Generative Model**: Discrete Diffusion Probabilistic Model (D3PM)
-- **Dataset**: FFHQ（512×512 顔画像）
+- **Encoder / Decoder**: SQ-VAE (Sony's VQ-VAE derivative paper)
+- **Latent space**: Discrete representation — a 64×64 grid of indices into a codebook of 1024
+- **Generative model**: Discrete Diffusion Probabilistic Model (D3PM)
+- **Dataset**: FFHQ (512×512 face images)
 
-SQ-VAE によって得られた離散潜在表現を用いて D3PM を訓練し、最終的に **顔画像を生成可能なモデル** を構築しました。
+D3PM is trained over the discrete latents produced by SQ-VAE. Decoding the sampled latents yields novel face images.
 
 ---
 
 ## Motivation
 
-### なぜ SQ-VAE を選択したか
+### Why SQ-VAE
 
-SQ-VAE は Sony の VQ-VAE 系研究の中で、
+Among the VQ-VAE-family papers from Sony, SQ-VAE is notable for **actively using a wide range of the codebook rather than collapsing onto a few specific entries**.
 
-- **特定のコードブックだけ使わずにたくさんのコードを使う**
+This experiment confirmed that the SQ-VAE latent representation can:
 
-という特徴を持ちます。
+- Compress images to roughly **1/400 the size of JPEG**
+- While preserving perceptual face quality (PSNR ~28 dB)
 
-本実験では、
+A representation this compact should, in principle, simplify the downstream generative modeling target.
 
-- 画像を **JPEG 比で約 1/400** まで圧縮
-- それにも関わらず顔画像としての視覚的品質を維持（PSNR ~28 dB）
+### Why D3PM
 
-できることを確認しました。
+The hypothesis was as follows:
 
-これは **生成モデルの学習対象を大幅に単純化できる** 可能性を示します。
+- SQ-VAE produces **discrete** latents
+- Discrete representations carry **less information** than continuous ones
+- Therefore, the generative model's capacity requirement **might be reduced**
 
-### なぜ D3PM を選択したか
-
-D3PM を選定した理由は以下です。
-
-- SQ-VAE の出力は **離散潜在表現**
-- 連続潜在表現よりも **情報量が少ない**
-- ⇒ **モデル容量を削減できるのではないか** と仮説を立てた
-
-この仮説を検証するため、連続潜在ではなく **離散拡散モデル (D3PM)** を用いた生成を試みました。
+To test this hypothesis, the generative model was implemented as a **discrete** diffusion model (D3PM) operating directly on the latent codebook indices, rather than a continuous diffusion model.
 
 ---
 
 ## Results
 
-- SQ-VAE により **高圧縮かつ高品質な潜在表現** の生成に成功（PSNR ~28 dB、JPEG 比 ~1/400）
-- D3PM により、潜在空間上での拡散生成が可能（上記 16 枚参照）
-- 潜在からのデコードによって **顔画像生成を確認**
+- SQ-VAE produces **high-quality, highly compressed** latent representations (PSNR ~28 dB, ~1/400 the size of JPEG).
+- D3PM successfully performs diffusion-based generation in the discrete latent space (see the 16-face grid above).
+- Decoding sampled latents produces coherent face images.
 
-一方で、
+However, one hypothesis was **not** confirmed:
 
-- **離散潜在表現を用いても、期待したほどモデルサイズの削減はできなかった**
-
-という結果も得られました。
+- Using a discrete latent representation **did not lead to the expected reduction in generative model size**.
 
 ---
 
 ## Discussion
 
-本実験から得られた知見は以下です。
+Key takeaways from this experiment:
 
-- 離散潜在表現は **情報圧縮として非常に有効**
-- しかし、**離散化 = モデル軽量化** という単純な関係にはならない
-- モデルサイズや計算量は以下に強く依存する:
-  - 潜在の次元
-  - 拡散ステップ数
-  - カテゴリ数
+- Discrete latent representations are **highly effective as an information-compression mechanism**.
+- Compression alone does **not** imply a smaller generative model.
+- Model size and compute cost depend strongly on:
+  - Latent dimensionality
+  - Number of diffusion steps
+  - Number of categories
 
-この結果は、**「潜在表現の情報量」と「生成モデルの複雑さ」は独立に評価すべき** であることを示唆しています。
+These findings suggest that **"information content of the latent representation"** and **"complexity of the generative model"** should be evaluated as independent axes, not as a single tradeoff.
 
 ---
 
@@ -114,9 +106,9 @@ D3PM を選定した理由は以下です。
 ├── encode_sqvae_latents.py             # Encode FFHQ into discrete latents
 ├── eval_sqvae_ffhq.py                  # SQ-VAE reconstruction evaluation
 ├── eval_sqvae_from_latents.py          # Latent-based evaluation
-├── train_d3pm_latent_cross_mi_mask.py  # D3PM training on latent space
-├── grid_4x4_steps1000.png              # D3PM generation sample
-├── sqvae_results_ffhq_1024/            # SQ-VAE reconstruction samples (per epoch)
+├── train_d3pm_latent_cross_mi_mask.py  # D3PM training on the latent space
+├── grid_4x4_steps1000.png              # D3PM generation sample (16 faces)
+├── sqvae_results_ffhq_1024/            # SQ-VAE reconstruction samples per epoch
 └── sqvae_eval_results/                 # Evaluation histograms and statistics
 ```
 
@@ -124,21 +116,21 @@ D3PM を選定した理由は以下です。
 
 ## Compute
 
-- Tokyo Institute of Technology **TSUBAME supercomputer** (free H100 quota)
-- **Lambda Labs H100** (self-funded)
+- **Tokyo Institute of Technology — TSUBAME supercomputer** (free H100 quota)
+- **Lambda Labs — H100** (self-funded)
 
 ---
 
 ## Purpose of This Repository
 
-- 最新研究（SQ-VAE / D3PM）の理解と論文からの再実装
-- 圧縮 × 生成の設計トレードオフの検証
-- **研究・実装能力のポートフォリオとしての提示**
+- Understand and re-implement recent research (SQ-VAE, D3PM) directly from the papers.
+- Probe the design tradeoff between latent-space compression and generative-model complexity.
+- Serve as a **portfolio artifact** demonstrating independent research and implementation capability.
 
 ---
 
 ## References
 
-- Sony AI — SQ-VAE (2022)
-- Google Research — D3PM (2021)
-- FFHQ dataset — NVIDIA StyleGAN
+- Sony AI — *SQ-VAE* (2022)
+- Google Research — *Structured Denoising Diffusion Models in Discrete State-Spaces (D3PM)* (2021)
+- NVIDIA — *FFHQ* face image dataset (StyleGAN paper)
